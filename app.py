@@ -4,14 +4,17 @@ from PIL import Image
 import io
 import numpy as np
 import tensorflow as tf
+import logging
 
 app = Flask(__name__)
-CORS(app) 
+CORS(app)
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 model = tf.keras.applications.MobileNetV2(weights='imagenet')
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
-
     image = image.convert('RGB')
     image = image.resize((224, 224))
     image_array = np.array(image)
@@ -26,29 +29,38 @@ def decode_predictions(predictions: np.ndarray, top=1):
 
 @app.route('/', methods=['POST'])
 def predict():
+    logger.info("Received request")
     if request.method == 'POST':
         if 'file' not in request.files:
+            logger.error('No file provided')
             return jsonify({'error': 'No file provided'}), 400
 
         file = request.files['file']
-        
+
         if file:
             try:
+                logger.info("Processing file")
                 image = Image.open(io.BytesIO(file.read()))
                 preprocessed_image = preprocess_image(image)
-                
+
                 predictions = model.predict(preprocessed_image)
                 decoded_predictions = decode_predictions(predictions)
 
+                logger.info("Prediction successful")
                 return jsonify(decoded_predictions[0])
-            
             except Exception as e:
-                print(f"Error processing file: {e}")
+                logger.error(f"Error processing file: {e}")
                 return jsonify({'error': 'An error occurred while processing the file.'}), 500
         else:
+            logger.error('Invalid file')
             return jsonify({'error': 'Invalid file'}), 400
     else:
+        logger.error('Method not allowed')
         return jsonify({'error': 'Method not allowed'}), 405
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({'message': 'Welcome to the image classification API. Please use POST to upload an image.'})
 
 if __name__ == '__main__':
     app.run(debug=True)
