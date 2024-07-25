@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 model = tf.keras.applications.MobileNetV2(weights='imagenet')
 
+current_image_name = None
+processing_start_time = None
+
 def preprocess_image(image: Image.Image) -> np.ndarray:
     image = image.convert('RGB')
     image = image.resize((224, 224))
@@ -29,15 +32,17 @@ def decode_predictions(predictions: np.ndarray, top=1):
     results = [{'label': d[1], 'score': float(d[2])} for d in decoded[0]]
     return results
 
-def log_processing_time(image_name):
-    start_time = time.time()
+def log_processing_time():
+    global processing_start_time
     while True:
-        elapsed_time = time.time() - start_time
-        logger.info(f"Image '{image_name}' has been processed for {elapsed_time:.2f} seconds")
-        time.sleep(60)  # Log every minute
+        if current_image_name and processing_start_time:
+            elapsed_time = time.time() - processing_start_time
+            logger.info(f"Image '{current_image_name}' has been processed for {elapsed_time:.2f} seconds")
+        time.sleep(60) 
 
 @app.route('/', methods=['POST'])
 def predict():
+    global current_image_name, processing_start_time
     logger.info("Received request")
     if request.method == 'POST':
         if 'file' not in request.files:
@@ -45,15 +50,13 @@ def predict():
             return jsonify({'error': 'No file provided'}), 400
 
         file = request.files['file']
-        image_name = file.filename
+        current_image_name = file.filename
 
         if file:
             try:
-                logger.info(f"Processing file: {image_name}")
-                processing_thread = Thread(target=log_processing_time, args=(image_name,))
-                processing_thread.daemon = True
-                processing_thread.start()
+                logger.info(f"Processing file: {current_image_name}")
 
+                processing_start_time = time.time()
                 image = Image.open(io.BytesIO(file.read()))
                 preprocessed_image = preprocess_image(image)
 
@@ -72,16 +75,24 @@ def predict():
         logger.error('Method not allowed')
         return jsonify({'error': 'Method not allowed'}), 405
 
-@app.route('/status')
+@app.route('/status', methods=['GET'])
 def status():
+    elapsed_time = 0
+    if current_image_name and processing_start_time:
+        elapsed_time = time.time() - processing_start_time
     return render_template_string('''
         <html>
         <body>
             <h1>Backend Status</h1>
             <p>Currently processing image: {{ image_name }}</p>
+            <p>Processing time: {{ elapsed_time }} seconds</p>
         </body>
         </html>
-    ''', image_name='No image being processed')
+    ''', image_name=current_image_name or "No image being processed", elapsed_time=round(elapsed_time, 2))
 
 if __name__ == '__main__':
+    log_thread = Thread(target=log_processing_time)
+    log_thread.daemon = True
+    log_thread.start()
+
     app.run(debug=True)
