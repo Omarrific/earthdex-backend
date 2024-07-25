@@ -38,13 +38,23 @@ def log_processing_time():
         if current_image_name and processing_start_time:
             elapsed_time = time.time() - processing_start_time
             logger.info(f"Image '{current_image_name}' has been processed for {elapsed_time:.2f} seconds")
-        time.sleep(60) 
+        time.sleep(60)
 
-@app.route('/', methods=['POST'])
-def predict():
-    global current_image_name, processing_start_time
-    logger.info("Received request")
+@app.route('/', methods=['GET', 'POST'])
+def home():
+    if request.method == 'GET':
+        logger.info("GET request to /")
+        return render_template_string('''
+            <html>
+            <body>
+                <h1>Welcome to the Earthdex API</h1>
+                <p>Please use the POST method to upload an image for the Earthdex, or you can go to this link: https://earthdex.vercel.app/ </p>
+            </body>
+            </html>
+        ''')
+
     if request.method == 'POST':
+        logger.info("Received POST request to /")
         if 'file' not in request.files:
             logger.error('No file provided')
             return jsonify({'error': 'No file provided'}), 400
@@ -56,6 +66,7 @@ def predict():
             try:
                 logger.info(f"Processing file: {current_image_name}")
 
+                global processing_start_time
                 processing_start_time = time.time()
                 image = Image.open(io.BytesIO(file.read()))
                 preprocessed_image = preprocess_image(image)
@@ -71,9 +82,6 @@ def predict():
         else:
             logger.error('Invalid file')
             return jsonify({'error': 'Invalid file'}), 400
-    else:
-        logger.error('Method not allowed')
-        return jsonify({'error': 'Method not allowed'}), 405
 
 @app.route('/status', methods=['GET'])
 def status():
@@ -95,4 +103,4 @@ if __name__ == '__main__':
     log_thread.daemon = True
     log_thread.start()
 
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
