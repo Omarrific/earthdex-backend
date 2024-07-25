@@ -1,10 +1,12 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 from PIL import Image
 import io
 import numpy as np
 import tensorflow as tf
 import logging
+import time
+from threading import Thread
 
 app = Flask(__name__)
 CORS(app)
@@ -27,6 +29,13 @@ def decode_predictions(predictions: np.ndarray, top=1):
     results = [{'label': d[1], 'score': float(d[2])} for d in decoded[0]]
     return results
 
+def log_processing_time(image_name):
+    start_time = time.time()
+    while True:
+        elapsed_time = time.time() - start_time
+        logger.info(f"Image '{image_name}' has been processed for {elapsed_time:.2f} seconds")
+        time.sleep(60)  # Log every minute
+
 @app.route('/', methods=['POST'])
 def predict():
     logger.info("Received request")
@@ -36,10 +45,15 @@ def predict():
             return jsonify({'error': 'No file provided'}), 400
 
         file = request.files['file']
+        image_name = file.filename
 
         if file:
             try:
-                logger.info("Processing file")
+                logger.info(f"Processing file: {image_name}")
+                processing_thread = Thread(target=log_processing_time, args=(image_name,))
+                processing_thread.daemon = True
+                processing_thread.start()
+
                 image = Image.open(io.BytesIO(file.read()))
                 preprocessed_image = preprocess_image(image)
 
@@ -58,9 +72,16 @@ def predict():
         logger.error('Method not allowed')
         return jsonify({'error': 'Method not allowed'}), 405
 
-@app.route('/', methods=['GET'])
-def home():
-    return jsonify({'message': 'Welcome to the image classification API. Please use POST to upload an image.'})
+@app.route('/status')
+def status():
+    return render_template_string('''
+        <html>
+        <body>
+            <h1>Backend Status</h1>
+            <p>Currently processing image: {{ image_name }}</p>
+        </body>
+        </html>
+    ''', image_name='No image being processed')
 
 if __name__ == '__main__':
     app.run(debug=True)

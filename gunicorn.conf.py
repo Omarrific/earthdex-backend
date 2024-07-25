@@ -1,2 +1,2 @@
 workers = 2
-timeout = 600
+timeout = 300
