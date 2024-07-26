@@ -13,7 +13,7 @@ from threading import Thread
 app = Flask(__name__)
 CORS(app)
 
-api_key = xxx
+api_key = 'xxx'
 if not api_key:
     raise ValueError("The OPENAI_API_KEY environment variable must be set")
 
@@ -44,14 +44,14 @@ def decode_predictions(predictions: np.ndarray, top=1):
 def generate_species_description(species_name):
     try:
         response = openai.ChatCompletion.create(
-            model="text-davinci-003",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": f"Provide a brief description for the species: {species_name}."}
             ],
             max_tokens=150
         )
-        return response['choices'][0]['message']['content'].strip()
+        return response.choices[0].message['content'].strip()
     except Exception as e:
         logger.error(f"Error generating species description: {e}")
         return "Description not available."
@@ -99,7 +99,6 @@ def home():
                 predictions = model.predict(preprocessed_image)
                 decoded_predictions = decode_predictions(predictions)
 
-                # Get the top prediction
                 top_prediction = decoded_predictions[0]
                 species_name = top_prediction['label']
                 
