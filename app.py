@@ -1,3 +1,5 @@
+import os
+import openai
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 from PIL import Image
@@ -11,6 +13,12 @@ from threading import Thread
 app = Flask(__name__)
 CORS(app)
 
+api_key = xxx
+if not api_key:
+    raise ValueError("The OPENAI_API_KEY environment variable must be set")
+
+openai.api_key = api_key 
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -18,6 +26,7 @@ model = tf.keras.applications.MobileNetV2(weights='imagenet')
 
 current_image_name = None
 processing_start_time = None
+species_description = None
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
     image = image.convert('RGB')
@@ -31,6 +40,21 @@ def decode_predictions(predictions: np.ndarray, top=1):
     decoded = tf.keras.applications.mobilenet_v2.decode_predictions(predictions, top=top)
     results = [{'label': d[1], 'score': float(d[2])} for d in decoded[0]]
     return results
+
+def generate_species_description(species_name):
+    try:
+        response = openai.ChatCompletion.create(
+            model="text-davinci-003",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": f"Provide a brief description for the species: {species_name}."}
+            ],
+            max_tokens=150
+        )
+        return response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        logger.error(f"Error generating species description: {e}")
+        return "Description not available."
 
 def log_processing_time():
     global processing_start_time
@@ -60,6 +84,7 @@ def home():
             return jsonify({'error': 'No file provided'}), 400
 
         file = request.files['file']
+        global current_image_name
         current_image_name = file.filename
 
         if file:
@@ -74,14 +99,34 @@ def home():
                 predictions = model.predict(preprocessed_image)
                 decoded_predictions = decode_predictions(predictions)
 
+                # Get the top prediction
+                top_prediction = decoded_predictions[0]
+                species_name = top_prediction['label']
+                
+                global species_description
+                species_description = generate_species_description(species_name)
+
                 logger.info("Prediction successful")
-                return jsonify(decoded_predictions[0])
+                return jsonify({
+                    'label': species_name,
+                    'description': species_description,
+                    'score': top_prediction['score']
+                })
             except Exception as e:
                 logger.error(f"Error processing file: {e}")
                 return jsonify({'error': 'An error occurred while processing the file.'}), 500
         else:
             logger.error('Invalid file')
             return jsonify({'error': 'Invalid file'}), 400
+
+@app.route('/description', methods=['GET'])
+def description():
+    species = request.args.get('species')
+    if not species:
+        return jsonify({'error': 'No species provided'}), 400
+
+    description_text = generate_species_description(species)
+    return jsonify({'description': description_text})
 
 @app.route('/status', methods=['GET'])
 def status():
